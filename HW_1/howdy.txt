@@ -1,0 +1,3 @@
+hi I'm vaibhav
+this is a file for testing
+I want to see this get written to stdout or wherever I'm destined to end 
