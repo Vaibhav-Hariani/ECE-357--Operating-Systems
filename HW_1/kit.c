@@ -39,11 +39,7 @@ int main(int argc, char **argv) {
   extern char *optarg;
   extern int optind;
   optind = 1;
-  // while (c = getopt(argc, argv, "b:") != -1) {
-  //   buf_size = atoi(optarg);
-
-  // }
-
+  
   while ((c = getopt(argc, argv, "o:b:")) != -1) {
     switch (c) {
     case 'o':
@@ -52,6 +48,7 @@ int main(int argc, char **argv) {
       break;
     case 'b':
       buf_size = atoi(optarg);
+      // printf("%d\n", buf_size);
       if (buf_size <= 0) {
         perror("Invalid buffer size \n");
         return -1;
@@ -72,17 +69,18 @@ int main(int argc, char **argv) {
 
   for (i; i < argc; i++) {
     file_desc = STDIN_FILENO;
-    if (argv[i][0] != '-') {
-      // printf("Opening Read File %s\n", argv[i]);
+    if (argv[i][0] != '-' & strlen(argv[i]) != 1) {
       file_desc = open(argv[i], O_RDONLY);
     }
-    if (error(file_desc))
+
+    if (error(file_desc)){
+      close(output_file);
       return -1;
+    }
 
     cur_size = buf_size;
     while (cur_size >= buf_size) {
       cur_size = read(file_desc, &buf, buf_size);
-
       if (cur_size < 0) {
         close(file_desc);
         close(output_file);
