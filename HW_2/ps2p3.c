@@ -49,10 +49,9 @@ int descend_dir(char* path, struct out_data* data){
         if(strcmp(name, "..") == 0 || strcmp(name, ".") == 0) {
             continue;
         }
-        char pathname[256];
-
+        //2 for null character & slash
+        char pathname[strlen(path) + 2 +strlen(name)];
         strcpy(pathname,path);
-
         strcat(pathname,"/");
         strcat(pathname,name);
 
