@@ -10,14 +10,17 @@
 
 typedef struct out_data {
         //Initializing as long ints: A filesystem with 2^8*4 bytes (4 gigabytes) is full well possible
-    long int total_file_size;
-    long int total_disk_blocks;
+    long unsigned int total_file_size;
+    long unsigned int total_disk_blocks;
     int num_hardlinks;
     int num_failed_symlinks;
     //Assuming problematic if it's not alphanumeric or 
     int n_problematic_names;
     //Stores all the inodes consecutively; 
     int inodes[16];
+    //Making this super large so I don't have to rebuild it ever
+    int seen_hardlinks[5000];
+    int size_cap;
 } data;
 
 int IsAscii(char* str){
@@ -28,6 +31,15 @@ int IsAscii(char* str){
         }
     }
     return 1;
+}
+
+int in_array(int key, int* array, int array_size){
+    for(int i = 0; i < array_size; i++){
+        if(array[i] == key){
+            return 1;
+        }
+    }
+    return -1;
 }
 
 int descend_dir(char* path, struct out_data* data){
@@ -55,8 +67,8 @@ int descend_dir(char* path, struct out_data* data){
         strcat(pathname,"/");
         strcat(pathname,name);
 
-        //Testing code, comment out before submission
-        printf("Reached File %s\n", pathname);
+        // //Testing code, comment out before submission
+        // printf("Reached File %s\n", pathname);
 
         int ascii = IsAscii(name);
         if(ascii < 0) {
@@ -73,14 +85,27 @@ int descend_dir(char* path, struct out_data* data){
         data -> inodes[indexed_mode]++;
         switch (mode) {
             case S_IFDIR:
-                printf("Descending into %s\n", pathname);
                 int i = descend_dir(pathname, data);
                 break;
             case S_IFREG:
-                data -> total_disk_blocks += st.st_blocks;
-                data -> total_file_size += st.st_size;
                 if(st.st_nlink > 1){
-                    data -> num_hardlinks ++;
+                    // printf("Found Hardlinked File %s \n", name);
+                    if(in_array(st.st_ino,data -> seen_hardlinks, data -> num_hardlinks) < 0 ) {
+                        //If the element is not in the array, 
+                        if(data -> num_hardlinks < data ->size_cap) {
+                            data -> seen_hardlinks[data -> num_hardlinks] = st.st_ino;
+                            data -> num_hardlinks ++;
+                            data -> total_disk_blocks += st.st_blocks;
+                            data -> total_file_size += st.st_size;
+                        } else {
+                            printf("Oops, too many hardlinks");
+                        }
+                    } else {
+                        printf("File %s referenced prior \n", name);
+                    }
+                } else {
+                        data -> total_disk_blocks += st.st_blocks;
+                        data -> total_file_size += st.st_size;
                 }
                 break;
             case S_IFLNK:
@@ -118,6 +143,7 @@ int main(int argc, char **argv) {
     char* starting_path =argv[1];
     printf("Got arg: %s \n", starting_path);
     data rd = {0};
+    rd.size_cap = 5000;
 
 
     descend_dir(argv[1],&rd);
@@ -129,8 +155,8 @@ int main(int argc, char **argv) {
             printf("# of %s: %d\n", inode_labels[i],rd.inodes[i]);
         }
     }
-    printf("Regular File Sum: %d \n", rd.total_file_size);
-    printf("Regular File Block Sum: %d \n", rd.total_disk_blocks);
+    printf("Regular File Sum: %lu \n", rd.total_file_size);
+    printf("Regular File Block Sum: %lu \n", rd.total_disk_blocks);
     printf("# of Hardlinked Files: %d \n", rd.num_hardlinks);
     printf("# of Failed Symlinks: %d \n", rd.num_failed_symlinks);
     printf("# of \"problematic\" pathnames: %d \n", rd.n_problematic_names);
