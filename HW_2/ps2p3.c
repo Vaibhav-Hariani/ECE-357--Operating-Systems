@@ -26,7 +26,7 @@ typedef struct out_data {
 int IsAscii(char* str){
     for(int i = 0; i < strlen(str); i++){
         //Used an ascii table, assumed that values within these bounds would be reasonable
-        if( '!' >= str[i] || str[i] >= '~' || str[i] == '/' ){
+        if( '!' <= str[i] || str[i] >= '~' || str[i] == '/' ){
              return -1;
         }
     }
