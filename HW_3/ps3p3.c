@@ -30,18 +30,20 @@ void perform_redir(char* redir_cmd) {
         case '>':
             final_dir = STDOUT_FILENO;
             if (redir_cmd[1] == '>') {
-                input_dir = open(&redir_cmd[2], O_WRONLY | O_CREAT | O_APPEND);
+                input_dir = open(&redir_cmd[2], O_WRONLY | O_CREAT | O_APPEND, 0666);
             } else {
-                input_dir = open(&redir_cmd[1], O_WRONLY | O_CREAT | O_TRUNC);
+                input_dir = open(&redir_cmd[1], O_WRONLY | O_CREAT | O_TRUNC,0666);
             }
             break;
         case '2':
             final_dir = STDERR_FILENO;
             if (redir_cmd[2] == '>') {
-                input_dir = open(&redir_cmd[3], O_WRONLY | O_CREAT | O_APPEND);
+                input_dir = open(&redir_cmd[3], O_WRONLY | O_CREAT | O_APPEND, 0666);
             } else {
-                input_dir = open(&redir_cmd[2], O_WRONLY | O_CREAT | O_TRUNC);
+                input_dir = open(&redir_cmd[2], O_WRONLY | O_CREAT | O_TRUNC, 0666);
             }
+        default: 
+            //Can assume this is not a valid descriptor
             break;
     }
 
@@ -55,11 +57,20 @@ int process_cmd(data cmd_with_args) {
         char* redir_cmd = cmd_with_args.redirs[i];
         perform_redir(redir_cmd);
         if (errno != 0) {
-            fprintf(stderr, "during redirection, failure: %s \n", strerror(errno));
+            fprintf(stderr, "during redirection of file %s, encountered error: %s \n",redir_cmd, strerror(errno));
             exit(1);
             return 1;
         }
     }
+    // fprintf(stderr, "Executing Command %s with args ", cmd_with_args.cmd);
+    // for(int i = 0; i < cmd_with_args.num_args; i++) {
+    //     fprintf(stderr, "\t %s", cmd_with_args.args[i]);
+    // }
+    // fprintf(stderr, "\t and with redirs", cmd_with_args.cmd);
+    // for(int i = 0; i < cmd_with_args.num_redirs; i++) {
+    //     fprintf(stderr, "\t %s", cmd_with_args.redirs[i]);
+    // }
+
     // Execute command
     int i = execvp(cmd_with_args.cmd, cmd_with_args.args);
     if (i == -1) {
@@ -77,7 +88,8 @@ int main(int argc, char** argv) {
     // If an argument is not specified, read from stdin (fd 1)
     FILE* in_file = stdin;
     if (argc != 1) {
-        in_file = fopen(argv[2], "w");
+        // fprintf(stderr, argv[1]);
+        in_file = fopen(argv[1], "r");
         line_num = -1;
     }
     if (errno != 0) {
@@ -98,9 +110,10 @@ int main(int argc, char** argv) {
     size_t len = 0;
     size_t nread;
     // This is how I figured I could handle reading one line versus an entire file.
-    while (i != line_num && ((nread = getline(&line, &len, in_file) != -1))) {
+    while (i != line_num && (nread = getline(&line, &len, in_file) != -1)) {
         i++;
-        if (line[0] == '#') {
+        //Skip blank lines
+        if (line[0] == '\n' || line[0]== '#') {
             continue;
         }
         //Reset the errno for every line
@@ -110,8 +123,11 @@ int main(int argc, char** argv) {
 
         // Tokenizing and processing the call
         int on_args = -1;
-        char* raw = strtok(line, " \t");
+        char* raw = strtok(line, " \t\n");
         line_data.cmd = raw;
+        //First arg should be function itself
+        line_data.args[0] = raw;
+        line_data.num_args++;
         // This tokenizes the newline, everything after the first element ()
         while (raw != NULL) {
             if (raw[0] == '<' || raw[0] == '>' || raw[1] == '<' || raw[1] == '>') {
@@ -131,28 +147,30 @@ int main(int argc, char** argv) {
                     on_args = 1;
                     break;
             }
-            raw = strtok(line, " \t");
+            raw = strtok(0, " \t\n");
         }
         // The custom cd, pwd, and exit
         errno = 0;
         if (strcmp(line_data.cmd, "cd") == 0) {
-            char* dir = "$HOME";
-            if (line_data.num_args > 0) {
-                dir = line_data.args[0];
+            char* dir = getenv("HOME");
+            if (line_data.num_args > 1) {
+                dir = line_data.args[1];
             }
             chdir(dir);
+
         } else if (strcmp(line_data.cmd, "pwd") == 0) {
-            char* buf;
-            size_t size;
+            char buf[2000];
+            size_t size = 2000;
             getcwd(buf, size);
-            printf("%s", buf);
+            printf("%s\n", buf);
+
         } else if (strcmp(line_data.cmd, "exit") == 0) {
             int ret = last_call;
-            if (line_data.num_args > 0) {
-                ret = atoi(line_data.args[0]);
+            if (line_data.num_args > 1) {
+                ret = atoi(line_data.args[1]);
             }
             exit(ret);
-            // Command we don't know
+
         } else {
             struct rusage usage;
 
@@ -184,7 +202,7 @@ int main(int argc, char** argv) {
                     double real_time = (double) 1000 * (real_end - real_start) / CLOCKS_PER_SEC;
                     double user_time = (double)(user_end.tv_sec * 1000) + (user_end.tv_usec / 1000) - (user_start.tv_sec * 1000) - (user_start.tv_usec / 1000);
                     double sys_time = (double)(sys_end.tv_sec * 1000) + (sys_end.tv_usec / 1000) - (sys_start.tv_sec * 1000) - (sys_start.tv_usec / 1000);
-                    fprintf(stderr, "statistics: \t user: %f, sys: %f, real: %f", user_time, sys_time, real_time);
+                    fprintf(stderr, "statistics: \t user: %0.2fms, sys: %0.2fms, real: %0.2fms\n", user_time, sys_time, real_time);
             }
         }
         if (errno != 0) {
