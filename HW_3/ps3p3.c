@@ -1,13 +1,13 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/resource.h>
+#include <sys/time.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
-#include <stdlib.h>
-#include <sys/wait.h>
-#include <sys/time.h>
-#include <sys/resource.h>
 
 typedef struct processed_line {
     char* cmd;
@@ -18,30 +18,29 @@ typedef struct processed_line {
     int num_redirs;
 } data;
 
-
-void perform_redir(char* redir_cmd){
+void perform_redir(char* redir_cmd) {
     int final_dir;
     int input_dir;
     char* fname;
-    switch(redir_cmd[0]){
+    switch (redir_cmd[0]) {
         case '<':
             final_dir = STDIN_FILENO;
             input_dir = open(&redir_cmd[1], O_RDONLY);
             break;
         case '>':
             final_dir = STDOUT_FILENO;
-            if(redir_cmd[1] == '>'){
-                input_dir = open(&redir_cmd[2], O_WRONLY|O_CREAT|O_APPEND);
+            if (redir_cmd[1] == '>') {
+                input_dir = open(&redir_cmd[2], O_WRONLY | O_CREAT | O_APPEND);
             } else {
-                input_dir = open(&redir_cmd[1], O_WRONLY|O_CREAT|O_TRUNC);                
+                input_dir = open(&redir_cmd[1], O_WRONLY | O_CREAT | O_TRUNC);
             }
             break;
         case '2':
             final_dir = STDERR_FILENO;
-            if(redir_cmd[2] == '>'){
-                input_dir = open(&redir_cmd[3], O_WRONLY|O_CREAT|O_APPEND);
+            if (redir_cmd[2] == '>') {
+                input_dir = open(&redir_cmd[3], O_WRONLY | O_CREAT | O_APPEND);
             } else {
-                input_dir = open(&redir_cmd[2], O_WRONLY|O_CREAT|O_TRUNC);                
+                input_dir = open(&redir_cmd[2], O_WRONLY | O_CREAT | O_TRUNC);
             }
             break;
     }
@@ -50,27 +49,25 @@ void perform_redir(char* redir_cmd){
 }
 
 int process_cmd(data cmd_with_args) {
-    //First, I/O Redirection
+    // First, I/O Redirection
     errno = 0;
-    for(int i = 0; i < cmd_with_args.num_redirs; i++){
+    for (int i = 0; i < cmd_with_args.num_redirs; i++) {
         char* redir_cmd = cmd_with_args.redirs[i];
         perform_redir(redir_cmd);
-        if(errno != 0){
+        if (errno != 0) {
             fprintf(stderr, "during redirection, failure: %s \n", strerror(errno));
             exit(1);
             return 1;
         }
     }
-
-    //Execute command
+    // Execute command
     int i = execvp(cmd_with_args.cmd, cmd_with_args.args);
-    if(i == -1){
+    if (i == -1) {
         fprintf(stderr, "exec call failed: %s \n", strerror(errno));
     }
     exit(127);
     return 127;
 }
-
 
 int main(int argc, char** argv) {
     extern int errno;
@@ -85,6 +82,7 @@ int main(int argc, char** argv) {
     }
     if (errno != 0) {
         fprintf(stderr, "Failed to open file\n");
+        return 0;
     }
 
     int i = 0;
@@ -94,20 +92,22 @@ int main(int argc, char** argv) {
     int last_pid = 0;
 
     clock_t real_start, real_end;
-    //For timing
+    // For timing
     struct timeval user_start, user_end, sys_start, sys_end;
 
     size_t len = 0;
     size_t nread;
     // This is how I figured I could handle reading one line versus an entire file.
     while (i != line_num && ((nread = getline(&line, &len, in_file) != -1))) {
-        //Want this data "wiped" after every call
-        data line_data = {0};
         i++;
-        // Ignore all lines that start with #
         if (line[0] == '#') {
             continue;
         }
+        //Reset the errno for every line
+        errno = 0;
+        data line_data = {0};
+        // Ignore all lines that start with #
+
         // Tokenizing and processing the call
         int on_args = -1;
         char* raw = strtok(line, " \t");
@@ -133,9 +133,7 @@ int main(int argc, char** argv) {
             }
             raw = strtok(line, " \t");
         }
-        //The custom commands
-        // These couldn't really be replicated,
-        // So they're just defined here
+        // The custom cd, pwd, and exit
         errno = 0;
         if (strcmp(line_data.cmd, "cd") == 0) {
             char* dir = "$HOME";
@@ -154,12 +152,7 @@ int main(int argc, char** argv) {
                 ret = atoi(line_data.args[0]);
             }
             exit(ret);
-
-        if(errno != 0){
-            fprintf(stderr, "Error executing %s: %s\n",line_data.cmd, strerror(errno));
-        }
-
-        //Command we don't know
+            // Command we don't know
         } else {
             struct rusage usage;
 
@@ -174,27 +167,31 @@ int main(int argc, char** argv) {
                     return process_cmd(line_data);
                     break;
                 case -1:
-                    //The fork failed
+                    // The fork failed
                     fprintf(stderr, "Fork command failed \n");
                     // return -1;
                 default:
                     wait(&last_call);
-                    rusage(RUSAGE_CHILDREN, &usage);
+                    getrusage(RUSAGE_CHILDREN, &usage);
                     user_end = usage.ru_utime;
                     sys_end = usage.ru_stime;
                     real_end = clock();
-                    if(WIFEXITED(last_call)){
+                    if (WIFEXITED(last_call)) {
                         fprintf(stderr, "Process %d exited with value %d\n", last_pid, WEXITSTATUS(last_call));
-                    } else {
-                        fprintf(stderr, "Process %d exited normally \n", last_pid, WEXITSTATUS(last_call));
-                    }
-                    fprintf(stderr, "statistics: ")
-
+                    } else if (WIFSIGNALED(last_call)){
+                        fprintf(stderr, "Process %d exited with signal %d\n", last_pid, WTERMSIG(last_call));
+                    } 
+                    double real_time = (double) 1000 * (real_end - real_start) / CLOCKS_PER_SEC;
+                    double user_time = (double)(user_end.tv_sec * 1000) + (user_end.tv_usec / 1000) - (user_start.tv_sec * 1000) - (user_start.tv_usec / 1000);
+                    double sys_time = (double)(sys_end.tv_sec * 1000) + (sys_end.tv_usec / 1000) - (sys_start.tv_sec * 1000) - (sys_start.tv_usec / 1000);
+                    fprintf(stderr, "statistics: \t user: %f, sys: %f, real: %f", user_time, sys_time, real_time);
             }
+        }
+        if (errno != 0) {
+                fprintf(stderr, "Error executing %s: %s\n", line_data.cmd, strerror(errno));
         }
     }
     fclose(in_file);
     exit(last_call);
     return 0;
 }
-
