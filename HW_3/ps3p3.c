@@ -30,17 +30,17 @@ void perform_redir(char* redir_cmd) {
         case '>':
             final_dir = STDOUT_FILENO;
             if (redir_cmd[1] == '>') {
-                input_dir = open(&redir_cmd[2], O_WRONLY | O_CREAT | O_APPEND, 0666);
+                input_dir = open(&redir_cmd[2], O_WRONLY | O_CREAT | O_APPEND, 0755);
             } else {
-                input_dir = open(&redir_cmd[1], O_WRONLY | O_CREAT | O_TRUNC,0666);
+                input_dir = open(&redir_cmd[1], O_WRONLY | O_CREAT | O_TRUNC, 0755);
             }
             break;
         case '2':
             final_dir = STDERR_FILENO;
             if (redir_cmd[2] == '>') {
-                input_dir = open(&redir_cmd[3], O_WRONLY | O_CREAT | O_APPEND, 0666);
+                input_dir = open(&redir_cmd[3], O_WRONLY | O_CREAT | O_APPEND, 0755);
             } else {
-                input_dir = open(&redir_cmd[2], O_WRONLY | O_CREAT | O_TRUNC, 0666);
+                input_dir = open(&redir_cmd[2], O_WRONLY | O_CREAT | O_TRUNC, 0755);
             }
         default: 
             //Can assume this is not a valid descriptor
@@ -74,7 +74,7 @@ int process_cmd(data cmd_with_args) {
     // Execute command
     int i = execvp(cmd_with_args.cmd, cmd_with_args.args);
     if (i == -1) {
-        fprintf(stderr, "exec call failed: %s \n", strerror(errno));
+        fprintf(stderr, "call to %s call failed: %s \n", cmd_with_args.cmd, strerror(errno));
     }
     exit(127);
     return 127;
@@ -83,21 +83,29 @@ int process_cmd(data cmd_with_args) {
 int main(int argc, char** argv) {
     extern int errno;
     errno = 0;
-    int line_num = 1;
-
+    int num_lines = 1;
+    int i = 0;
     // If an argument is not specified, read from stdin (fd 1)
     FILE* in_file = stdin;
     if (argc != 1) {
         // fprintf(stderr, argv[1]);
         in_file = fopen(argv[1], "r");
-        line_num = -1;
-    }
-    if (errno != 0) {
-        fprintf(stderr, "Failed to open file\n");
-        return 0;
+        char c;
+        if (errno != 0) {
+            fprintf(stderr, "Failed to open file\n");
+            return 0;
+        }
+        //Need to count number of lines in file to prevent rollover
+        //I Don't know why this was happening with getline?
+        //But this is the only way I could prevent it
+        for (c = getc(in_file); c != EOF; c = getc(in_file))
+            if (c == '\n') {
+                num_lines++;
+            }
+            fclose(in_file);
+            in_file = fopen(argv[1], "r");
     }
 
-    int i = 0;
     char* line;
 
     int last_call = 0;
@@ -110,7 +118,7 @@ int main(int argc, char** argv) {
     size_t len = 0;
     size_t nread;
     // This is how I figured I could handle reading one line versus an entire file.
-    while (i != line_num && (nread = getline(&line, &len, in_file) != -1)) {
+    while (i <= num_lines && (nread = getline(&line, &len, in_file) != -1)) {
         i++;
         //Skip blank lines
         if (line[0] == '\n' || line[0]== '#') {
@@ -195,9 +203,11 @@ int main(int argc, char** argv) {
                     sys_end = usage.ru_stime;
                     real_end = clock();
                     if (WIFEXITED(last_call)) {
-                        fprintf(stderr, "Process %d exited with value %d\n", last_pid, WEXITSTATUS(last_call));
+                        last_call = WEXITSTATUS(last_call);
+                        fprintf(stderr, "Process %d exited with value %d\n", last_pid, last_call);
                     } else if (WIFSIGNALED(last_call)){
-                        fprintf(stderr, "Process %d exited with signal %d\n", last_pid, WTERMSIG(last_call));
+                        last_call = WTERMSIG(last_call);
+                        fprintf(stderr, "Process %d exited with signal %d\n", last_pid, last_call);
                     } 
                     double real_time = (double) 1000 * (real_end - real_start) / CLOCKS_PER_SEC;
                     double user_time = (double)(user_end.tv_sec * 1000) + (user_end.tv_usec / 1000) - (user_start.tv_sec * 1000) - (user_start.tv_usec / 1000);
@@ -211,5 +221,5 @@ int main(int argc, char** argv) {
     }
     fclose(in_file);
     exit(last_call);
-    return 0;
+    return last_call;
 }
