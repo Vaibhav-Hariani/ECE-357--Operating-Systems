@@ -87,9 +87,13 @@ int main(int argc, char** argv) {
     bytes_processed = 0;
 
     struct sigaction restart;
-    sigset_t set;
+    sigset_t set_u1;
+    sigset_t set_u2;
 
-    sigaddset(&set, SIGUSR2);
+    sigaddset(&set_u2, SIGUSR2);
+
+    sigaddset(&set_u1, SIGUSR1);
+
 
     sigemptyset(&restart);
     restart.sa_flags = SA_RESTART;
@@ -114,7 +118,6 @@ int main(int argc, char** argv) {
         visited_files++;
         grep_p[2];
         more_p[2];
-
         if (errno < 0) {
             fprintf(stderr, "Failed to open file: Reason %s\n",
                     strerror(errno));
@@ -157,10 +160,14 @@ int main(int argc, char** argv) {
                 exit(1);
                 break;
         }
+        sigprocmask(SIG_UNBLOCK, &set_u2, NULL);
 
         write_pipe = grep_p[i];
         // Writing to grep_p[1]
         while (read(infile, buffer, bufsize) == bufsize) {
+            //Should not be reading the number of written bites as bites are being written
+            sigprocmask(SIG_BLOCK, &set_u1, NULL);
+
             int written = write(write_pipe, buffer, bufsize);
             // Keep writing while the number of written bits isn't satisfactory
             while (written != bufsize) {
@@ -168,14 +175,16 @@ int main(int argc, char** argv) {
                     write(write_pipe, buffer + written, bufsize - written);
             }
             bytes_processed += written;
+            sigprocmask(SIG_UNBLOCK, &set_u1, NULL);
         }
-
+        sigprocmask(SIG_BLOCK, &set_u2, NULL);
         // Block sigusr2 here so that wait & closing can happen
-        sigprocmask(SIG_BLOCK, &set, NULL);
         close(write_pipe);
         close(infile);
         wait();
         wait();
-        sigprocmask(SIG_UNBLOCK, &set, NULL);
+        //Reopen it when reading from file
+        //This should prevent the signal from interfering immediately
     }
+    return 0;
 }
