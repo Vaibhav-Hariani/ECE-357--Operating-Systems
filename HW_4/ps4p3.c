@@ -14,7 +14,8 @@ int visited_files;
 int bytes_processed;
 int write_pipe;
 int infile;
-sigjmp_buf jmp_buf;
+
+sigjmp_buf env;
 
 int grep_cmd(int* grep_in, int* grep_out, char* pattern) {
     if (dup2(grep_in, STDIN_FILENO) < 0) {
@@ -57,6 +58,7 @@ void sigusr1(int signo) {
 }
 
 void sigusr2(int signo) {
+    close(infile);
     close(write_pipe);
     wait();
     wait();
@@ -66,7 +68,7 @@ void sigusr2(int signo) {
         fprintf(stderr, "SIGUSR2 recieved: ");
     }
     fprintf(stderr, "moving on to file #%d\n", visited_files);
-    siglongjmp(jmp_buf, 1);
+    siglongjmp(env, 1);
 }
 
 int main(int argc, char** argv) {
@@ -103,7 +105,7 @@ int main(int argc, char** argv) {
 
     for (int i = 2; i < argc; i++) {
         // jump here if sigusr2 is sent
-        int jmp = sigsetjmp(jmp_buf, 0);
+        int jmp = sigsetjmp(env, 0);
         if (jmp != 0) {
             i++;
             // Should exit the function if no file left
