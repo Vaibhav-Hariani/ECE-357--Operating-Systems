@@ -13,6 +13,7 @@ extern int errno;
 int visited_files;
 int bytes_processed;
 int write_pipe;
+int infile;
 sigjmp_buf jmp_buf;
 
 int grep_cmd(int* grep_in, int* grep_out, char* pattern) {
@@ -59,7 +60,12 @@ void sigusr2(int signo) {
     close(write_pipe);
     wait();
     wait();
-    fprintf(stderr, "SIGUSR2 recieved, moving on to file #%d\n", visited_files);
+    if (signo == SIGPIPE) {
+        fprintf(stderr, "Broken Pipe: ");
+    } else {
+        fprintf(stderr, "SIGUSR2 recieved: ");
+    }
+    fprintf(stderr, "moving on to file #%d\n", visited_files);
     siglongjmp(jmp_buf, 1);
 }
 
@@ -74,7 +80,6 @@ int main(int argc, char** argv) {
     int* grep_p;
     int* more_p;
 
-    int infile;
     int grep;
     int more;
 
@@ -82,12 +87,16 @@ int main(int argc, char** argv) {
     bytes_processed = 0;
 
     struct sigaction restart;
+    sigset_t set;
+
+    sigaddset(&set, SIGUSR2);
+
     sigemptyset(&restart);
     restart.sa_flags = SA_RESTART;
 
-    struct sigaction usr1;
-    sigemptyset(&usr1);
-    // usr1.sa_mask = SIGUSR1;
+    signal(SIGUSR1, sigusr1);
+    signal(SIGUSR2, sigusr2);
+    signal(SIGPIPE, sigusr2);
 
     for (int i = 2; i < argc; i++) {
         // jump here if sigusr2 is sent
@@ -160,10 +169,13 @@ int main(int argc, char** argv) {
             }
             bytes_processed += written;
         }
-        close(infile);
-        close(write_pipe);
 
+        // Block sigusr2 here so that wait & closing can happen
+        sigprocmask(SIG_BLOCK, &set, NULL);
+        close(write_pipe);
+        close(infile);
         wait();
         wait();
+        sigprocmask(SIG_UNBLOCK, &set, NULL);
     }
 }
