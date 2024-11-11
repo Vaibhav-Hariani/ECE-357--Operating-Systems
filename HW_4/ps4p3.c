@@ -94,7 +94,6 @@ int main(int argc, char** argv) {
 
     sigaddset(&set_u1, SIGUSR1);
 
-
     sigemptyset(&restart);
     restart.sa_flags = SA_RESTART;
 
@@ -165,7 +164,7 @@ int main(int argc, char** argv) {
         write_pipe = grep_p[i];
         // Writing to grep_p[1]
         while (read(infile, buffer, bufsize) == bufsize) {
-            //Should not be reading the number of written bites as bites are being written
+            // Should not be reading the number of written bites as bites are being written
             sigprocmask(SIG_BLOCK, &set_u1, NULL);
 
             int written = write(write_pipe, buffer, bufsize);
@@ -183,8 +182,8 @@ int main(int argc, char** argv) {
         close(infile);
         wait();
         wait();
-        //Reopen it when reading from file
-        //This should prevent the signal from interfering immediately
+        // Reopen it when reading from file
+        // This should prevent the signal from interfering immediately
     }
     return 0;
 }
