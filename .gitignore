@@ -1,6 +1,6 @@
-.vscode
-*.out
-*.pdf
 *
 !/**/
 !*.*
+.vscode
+*.out
+*.pdf
