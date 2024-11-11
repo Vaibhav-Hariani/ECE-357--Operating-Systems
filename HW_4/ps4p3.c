@@ -6,6 +6,8 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 extern int errno;
@@ -17,7 +19,7 @@ int infile;
 
 sigjmp_buf env;
 
-int grep_cmd(int* grep_in, int* grep_out, char* pattern) {
+int grep_cmd(int grep_in, int grep_out, char* pattern) {
     if (dup2(grep_in, STDIN_FILENO) < 0) {
         fprintf(stderr, "Could not complete dup2 for stdin to grep: %s\n",
                 strerror(errno));
@@ -29,7 +31,7 @@ int grep_cmd(int* grep_in, int* grep_out, char* pattern) {
         exit(1);
     }
 
-    int i = execl("grep", "grep", "pattern", NULL);
+    int i = execlp("grep", "grep", pattern, "-a", NULL);
     if (i < 0) {
         fprintf(stderr, "Exec call failed:  %s\n", strerror(errno));
         exit(1);
@@ -37,13 +39,13 @@ int grep_cmd(int* grep_in, int* grep_out, char* pattern) {
     return 0;
 }
 
-int more_cmd(int* more_in) {
+int more_cmd(int more_in) {
     if (dup2(more_in, STDIN_FILENO) < 0) {
         fprintf(stderr, "Could not complete dup2 for stdin to more: %s\n",
                 strerror(errno));
         exit(1);
     }
-    int i = execl("more", "more", NULL);
+    int i = execlp("more", "more", NULL);
     if (i < 0) {
         fprintf(stderr, "Exec call failed:  %s\n", strerror(errno));
         exit(1);
@@ -60,8 +62,8 @@ void sigusr1(int signo) {
 void sigusr2(int signo) {
     close(infile);
     close(write_pipe);
-    wait();
-    wait();
+    wait(NULL);
+    wait(NULL);
     if (signo == SIGPIPE) {
         fprintf(stderr, "Broken Pipe: ");
     } else {
@@ -74,13 +76,13 @@ void sigusr2(int signo) {
 int main(int argc, char** argv) {
     // Pattern is the second argument
     errno = 0;
-    char* pattern = argv[1];
+    // char* pattern = argv[1];
 
     // Declaring these here for better memory management
     char buffer[4096];
     int bufsize = 4096;
-    int* grep_p;
-    int* more_p;
+    int grep_p[2];
+    int more_p[2];
 
     int grep;
     int more;
@@ -96,7 +98,7 @@ int main(int argc, char** argv) {
 
     sigaddset(&set_u1, SIGUSR1);
 
-    sigemptyset(&restart);
+    sigemptyset(&restart.sa_mask);
     restart.sa_flags = SA_RESTART;
 
     signal(SIGUSR1, sigusr1);
@@ -117,8 +119,6 @@ int main(int argc, char** argv) {
 
         infile = open(argv[i], O_RDONLY);
         visited_files++;
-        grep_p[2];
-        more_p[2];
         if (errno < 0) {
             fprintf(stderr, "Failed to open file: Reason %s\n",
                     strerror(errno));
@@ -135,7 +135,7 @@ int main(int argc, char** argv) {
             case 0:
                 // Clean stdin/stdout
                 close(infile);
-                grep_cmd(grep_p[0], more_p[1], pattern);
+                grep_cmd(grep_p[0], more_p[1], argv[1]);
                 exit(0);
                 break;
             case -1:
@@ -163,27 +163,43 @@ int main(int argc, char** argv) {
         }
         sigprocmask(SIG_UNBLOCK, &set_u2, NULL);
 
-        write_pipe = grep_p[i];
+        write_pipe = grep_p[1];
         // Writing to grep_p[1]
-        while (read(infile, buffer, bufsize) == bufsize) {
+
+        fprintf(stderr, "Starting to read from infile\n");
+
+        int r = read(infile, buffer, bufsize);
+        while (r > 0) {
+            fprintf(stderr, "Read %d chars \n", r);
+
             // Should not be reading the number of written bites as bites are being written
             sigprocmask(SIG_BLOCK, &set_u1, NULL);
 
-            int written = write(write_pipe, buffer, bufsize);
+            int written = write(write_pipe, buffer, r);
+            fprintf(stderr, "Written %d chars \n", written);
+
             // Keep writing while the number of written bits isn't satisfactory
-            while (written != bufsize) {
-                written +=
-                    write(write_pipe, buffer + written, bufsize - written);
+            while (written != r) {
+                written += write(write_pipe, buffer + written, r - written);
+                fprintf(stderr, "Written a total of %d chars \n", written);
             }
             bytes_processed += written;
             sigprocmask(SIG_UNBLOCK, &set_u1, NULL);
+            r = read(infile, buffer, bufsize);
         }
+
         sigprocmask(SIG_BLOCK, &set_u2, NULL);
         // Block sigusr2 here so that wait & closing can happen
-        close(write_pipe);
         close(infile);
-        wait();
-        wait();
+        close(write_pipe); 
+
+        
+        fprintf(stderr, "Closed the pipe \n");
+        wait(NULL);
+        fprintf(stderr, "One process died \n");
+        wait(NULL);
+        fprintf(stderr, "Another process died \n");
+
         // Reopen it when reading from file
         // This should prevent the signal from interfering immediately
     }
