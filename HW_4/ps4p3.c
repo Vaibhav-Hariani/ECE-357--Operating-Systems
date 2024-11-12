@@ -20,6 +20,7 @@ int infile;
 sigjmp_buf env;
 
 int grep_cmd(int grep_in, int grep_out, char* pattern) {
+
     if (dup2(grep_in, STDIN_FILENO) < 0) {
         fprintf(stderr, "Could not complete dup2 for stdin to grep: %s\n",
                 strerror(errno));
@@ -31,7 +32,7 @@ int grep_cmd(int grep_in, int grep_out, char* pattern) {
         exit(1);
     }
 
-    int i = execlp("grep", "grep", pattern, "-a", NULL);
+    int i = execlp("grep", "grep", pattern, NULL);
     if (i < 0) {
         fprintf(stderr, "Exec call failed:  %s\n", strerror(errno));
         exit(1);
@@ -60,16 +61,12 @@ void sigusr1(int signo) {
 }
 
 void sigusr2(int signo) {
-    close(infile);
-    close(write_pipe);
-    wait(NULL);
-    wait(NULL);
     if (signo == SIGPIPE) {
         fprintf(stderr, "Broken Pipe: ");
     } else {
         fprintf(stderr, "SIGUSR2 recieved: ");
     }
-    fprintf(stderr, "moving on to file #%d\n", visited_files);
+    fprintf(stderr, "moving on to file #%d\n", visited_files+1);
     siglongjmp(env, 1);
 }
 
@@ -107,15 +104,6 @@ int main(int argc, char** argv) {
 
     for (int i = 2; i < argc; i++) {
         // jump here if sigusr2 is sent
-        int jmp = sigsetjmp(env, 0);
-        if (jmp != 0) {
-            i++;
-            // Should exit the function if no file left
-            // Can jump here even if broken pipe
-            if (i >= argc) {
-                return 0;
-            }
-        }
 
         infile = open(argv[i], O_RDONLY);
         visited_files++;
@@ -135,6 +123,8 @@ int main(int argc, char** argv) {
             case 0:
                 // Clean stdin/stdout
                 close(infile);
+                close(grep_p[1]);
+                close(more_p[0]);
                 grep_cmd(grep_p[0], more_p[1], argv[1]);
                 exit(0);
                 break;
@@ -146,12 +136,17 @@ int main(int argc, char** argv) {
         }
         // grep will never reach here courtesy of the exit
         // Not to mention that the process is no longer attached to this program
-
         more = fork();
+        
+        //These halves of the pipe is no longer necessary
+        close(grep_p[0]);
+        close(more_p[1]);
+
         switch (more) {
             case 0:
                 // Clean stdin/stdout
                 close(infile);
+                close(grep_p[1]);
                 more_cmd(more_p[0]);
                 exit(0);
                 break;
@@ -161,44 +156,44 @@ int main(int argc, char** argv) {
                 exit(1);
                 break;
         }
-        sigprocmask(SIG_UNBLOCK, &set_u2, NULL);
+        close(more_p[0]);
 
         write_pipe = grep_p[1];
-        // Writing to grep_p[1]
-
-        fprintf(stderr, "Starting to read from infile\n");
-
+        // fprintf(stderr, "Starting to read from infile\n");
         int r = read(infile, buffer, bufsize);
         while (r > 0) {
-            fprintf(stderr, "Read %d chars \n", r);
+            // fprintf(stderr, "Read %d chars \n", r);
 
             // Should not be reading the number of written bites as bites are being written
             sigprocmask(SIG_BLOCK, &set_u1, NULL);
 
             int written = write(write_pipe, buffer, r);
-            fprintf(stderr, "Written %d chars \n", written);
+            // fprintf(stderr, "Written %d chars \n", written);
 
             // Keep writing while the number of written bits isn't satisfactory
             while (written != r) {
                 written += write(write_pipe, buffer + written, r - written);
-                fprintf(stderr, "Written a total of %d chars \n", written);
+                // fprintf(stderr, "Written a total of %d chars \n", written);
             }
             bytes_processed += written;
             sigprocmask(SIG_UNBLOCK, &set_u1, NULL);
             r = read(infile, buffer, bufsize);
         }
-
-        sigprocmask(SIG_BLOCK, &set_u2, NULL);
         // Block sigusr2 here so that wait & closing can happen
+        int jmp = sigsetjmp(env, 0);
+        if(jmp != 0){
+            close(more_p[0]);
+            close(more_p[1]);
+            close(grep_p[0]);
+        }
+
         close(infile);
         close(write_pipe); 
 
-        
-        fprintf(stderr, "Closed the pipe \n");
         wait(NULL);
-        fprintf(stderr, "One process died \n");
         wait(NULL);
-        fprintf(stderr, "Another process died \n");
+
+        fprintf(stderr, "Moving onto the next file: \n");
 
         // Reopen it when reading from file
         // This should prevent the signal from interfering immediately
