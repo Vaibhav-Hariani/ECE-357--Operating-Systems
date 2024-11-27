@@ -76,16 +76,27 @@ int holey_moley(int fd, int offset, int size) {
     fprintf(stderr, "Executing Test #4 (write to hole): \n");
     char* c = mmap(0, size, PROT_READ | PROT_WRITE,
                    MAP_FILE | MAP_SHARED, fd, offset);
-    char buf[100];
-    int nread;
+    char buf[4101];
+    int nread = 4101;
     fprintf(stderr, "Reading file to verify \n");
-    read(fd,buf,nread);
-    if(nread != 0) {
-        fprintf(stderr, "Verifying Failed \n");
+    int l = read(fd,buf,nread);
+    if(l < nread) {
+        return 0;
+    }
+    for(int i = 0; i < 4101; i++){
+        if(buf[i] != 0) {
+            return 0;
+        }
     }
     c = 'X';
     lseek(fd,16, SEEK_CUR);
     *(c + 16) = "A";
+    int new_read = read(fd,buf,16);
+    if(buf[0] != "X") {
+        fprintf(stderr, "Could not read byte X in test 4\n");
+        return 0;
+
+    }
     
     return 0;
 }
@@ -119,8 +130,8 @@ int main(int argc, char** argv) {
             break;
         case '4':
             fd = open("testfile", O_RDWR | O_CREAT | O_TRUNC, 0666);
-            ftruncate(fd, 4101);
-            holey_moley(fd);
+            // ftruncate(fd, 4101);
+            holey_moley(fd,4101,8192);
         default:
             fprintf(stderr, "Invalid Argument \n");
             return 0;
