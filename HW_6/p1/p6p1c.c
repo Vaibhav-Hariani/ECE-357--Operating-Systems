@@ -1,7 +1,5 @@
-#define _XOPEN_SOURCE 700
-#include <signal.h>
 #include <stdlib.h>
-#include <tas.h>
+#include "tas.h"
 struct ll_head {
     struct ll_elem *first;
     char* spinlock; //Spinlock
