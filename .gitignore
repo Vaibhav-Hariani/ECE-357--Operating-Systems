@@ -1,3 +1,5 @@
 .vscode
 *.out
 *.pdf
+*.o
+*.out
