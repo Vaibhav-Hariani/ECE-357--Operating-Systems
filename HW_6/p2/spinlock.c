@@ -1,8 +1,10 @@
 #include "tas.h" 
 #include "spinlock.h"
+#include <sched.h>
+
 int spin_lock(volatile char* lock){
         while(tas(lock) != 0) {
-            yield_sched();
+            sched_yield();
         }
         return 0;
 }
