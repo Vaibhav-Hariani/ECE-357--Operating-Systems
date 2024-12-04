@@ -1,11 +1,17 @@
 #ifndef ___SEM_H
 #define  ___SEM_H
-#define MAX_PROCS 64
+#define MAX_PROCS 6
 
 struct sem {
+    struct data {
+        int sleep;
+        int woken;
+        int num_handlers;
+    };
     int count;
     int proc_count;
     int IDs[MAX_PROCS];
+    struct data instrumentation[MAX_PROCS];
     char* lock;
 };
 
@@ -21,7 +27,7 @@ int sem_try(struct sem *s);
 // Attempt to perform the "P" operation (atomically decrement
 // the semaphore). If this operation would block, return 0,
 // otherwise return 1.
-void sem_wait(struct sem *s);
+void sem_wait(struct sem *s, int vproc);
 // Perform the P operation, blocking until successful. See below
 // about how blocking and waking are to be implemented.
 void sem_inc(struct sem *s);
