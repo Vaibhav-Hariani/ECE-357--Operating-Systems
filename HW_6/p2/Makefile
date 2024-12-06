@@ -13,8 +13,11 @@ tas64.o: tas64.S tas.h
 semaphores.o: sem.c sem.h
 	gcc -c sem.c
 
-shell_game: shell_game.o semaphores.o spinlock.o tas64.o
-	gcc -o shell_game.out shell_game.o semaphores.o spinlock.o tas64.o
+shell_game: shell_game.o sem.o spinlock.o tas64.o
+	gcc -o shell_game.out shell_game.o sem.o spinlock.o tas64.o
+
+debug_game:
+	gcc -g -o debug_game.out shell_game.c sem.c spinlock.c tas64.S
 
 shell_game.o: shell_game.o
 	gcc -c shell_game.c
