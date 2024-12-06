@@ -13,6 +13,7 @@ struct ll_elem {
 void ll_insert(struct ll_head *head, struct ll_elem *where,
                struct ll_elem *what) {
     while(TAS(&what -> spinlock) != 0);
+    //Need to lock both: This could theoretically cause deadlock, though it seems unlikely as 
 
     if (where) {
         while (TAS(&where->spinlock) !=0);
