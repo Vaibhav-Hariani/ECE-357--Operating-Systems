@@ -12,8 +12,11 @@ struct ll_elem {
 };
 void ll_insert(struct ll_head *head, struct ll_elem *where,
                struct ll_elem *what) {
+    
     while(TAS(&what -> spinlock) != 0);
-    //Need to lock both: This could theoretically cause deadlock, though it seems unlikely as 
+    //Need to lock both: This could theoretically cause deadlock, though its impossible through just this function
+    //Another access function that just secures a single lock COULD cause problems 
+    // if it also exists and can execute at the same time as this thread 
 
     if (where) {
         while (TAS(&where->spinlock) !=0);
